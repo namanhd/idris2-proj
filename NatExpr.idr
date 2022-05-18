@@ -66,7 +66,7 @@ total
 simplify : {k: Nat} -> Expr k -> List (Expr k)
 simplify e with (step e)
   _ | Just e' = e' :: simplify (assert_smaller e e')
-  _ | Nothing = [e] 
+  _ | Nothing = [] 
 
 -- proofs..
 total
