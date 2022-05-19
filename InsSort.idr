@@ -22,7 +22,7 @@ isSortedAsc [x] = True
 isSortedAsc (x1::(x2::xs)) = (x1 <= x2) && isSortedAsc (x2 :: xs)
 
 -- a type that represents the property that either (x <= y) or (y <= x)
--- (equality is taken to be Left, but that's not relevant here)
+-- (equality is taken to be Left)
 total
 LEQs : Ord a => (x: a) -> (y: a) -> Type
 LEQs x y = Either (So (x <= y)) (So (y <= x))
@@ -36,8 +36,12 @@ chooseLEQ x y = case choose (x <= y) of
     Left oh_y_leq_x => Right oh_y_leq_x
     Right _ => believe_me "not x <= y implies x > y implies x >= y; impossible branch" 
     -- this branch never happens because a correct Ord implementation would
-    -- never run into the case where neither x <= y nor y <= x is true, but
-    -- we need this case too because of totality ... sad!
+    -- never run into the case where neither x <= y nor y <= x is true. it's a
+    -- little unsatisfying but we need this case too for totality, and we can't
+    -- really frame this as Either (So (x <= y)) (So (x > y)) because there also
+    -- is nothing in the Ord interface to make sure that a So (y < x) can be 
+    -- cast into So (y <= x), so we would only be deferring this believe_me if
+    -- we followed that approach.
 
 
 -- isn't this kind of like an "fmap" motive. cool tech; to be used in the
@@ -49,8 +53,8 @@ map_head_mot (x :: xs) head_mot = head_mot x
 
 {- 
 the logic behind this motive for the proof-carrying insertion function is that:
-  - the base case doesn't need to take any extra arguments, they merely 
-    provide proof that the empty list is sorted after insertion.
+  - the base case doesn't need to take any extra arguments, it merely
+    provides proof that the empty list is sorted after insertion.
   - the inductive case, on the other hand, needs an argument that
     represents the inductive hypothesis, passed along from a previous recurse.
     The inductive hypothesis is a proof that the list being inserted into is 
@@ -80,7 +84,8 @@ inssort_insrt_prf_mot a x (s::ss) = Ord a =>
 
 
 
--- idris is too dumb to infer the motive directly, so we have to spoonfeed!
+-- when "rewrite _ in _" can't figure out the motive, we can feed the motive
+-- directly like this...
 total
 eitherEqsElim : (mot: (u:_) -> Type) -> (mx: mot x) -> (my: mot y) -> Either (u = x) (u = y) -> mot u
 eitherEqsElim mot mx my (Left u_eq_x) = replace {p=mot} (sym u_eq_x) mx
@@ -107,7 +112,7 @@ inssort_insrt_prf : (x: a) -> (l: List a) -> inssort_insrt_prf_mot a x l
 inssort_insrt_prf x [] = ([x] ** Oh)
 inssort_insrt_prf x [s] = \slist_sorted => case chooseLEQ x s of
   Left x_leq_s => ((x :: [s]) ** (andSo (x_leq_s, slist_sorted), Right Refl))
-  Right s_leq_x => (s :: [x] ** (andSo (s_leq_x, slist_sorted), Left Refl))
+  Right s_leq_x => ((s :: [x]) ** (andSo (s_leq_x, slist_sorted), Left Refl))
 inssort_insrt_prf x (s :: (s2 :: ss)) = \slist_sorted => case chooseLEQ x s of
   Left x_leq_s => ((x :: s :: (s2 :: ss)) ** (andSo (x_leq_s, slist_sorted), Right Refl))
   Right s_leq_x => let
@@ -134,13 +139,14 @@ inssort_insrt_prf x (s :: (s2 :: ss)) = \slist_sorted => case chooseLEQ x s of
             -- have s <= x (from the LEQs case analysis) and s <= s2 (from the
             -- inductive hypothesis, i.e. slist_sorted),
             -- and we can unite these cases with the knowledge that
-            -- r_x is always either s2 or x (from rec_head_proof)
+            -- r_x is always either s2 or x (from rec_head_proof) to obtain just
+            -- that s <= r_x.
             -- (also: replace is VERY particular about how it receives the
             -- motive. we can't just give the motive a name somewhere else
             -- and sub that name in here. it HAS to be this expression verbatim,
             -- otherwise idris can't figure out that this motive lambda expr
             -- applied to x or s2 is supposed to mean the same thing as 
-            -- applying that name to x or s2. terrible!)
+            -- applying that name to x or s2, which is pretty sad)
             s_leq_r_x = eitherEqsElim (\rhs => So (s <= rhs)) s_leq_s2 s_leq_x rec_head_proof
           in (andSo (s_leq_r_x, rec_sorted_proof), Left Refl)
     in ((s :: rec_out) ** proof_terms)
