@@ -10,6 +10,17 @@ data IsSorted : List a -> Type where
   IsSortedMany : 
     Ord a => (x1:a) -> (x2:a) -> (xs:List a) -> (So (x1 <= x2)) -> IsSorted (x2::xs) -> IsSorted (x1::(x2::xs))
 
+total
+isSortedAscTail :
+  Ord a => {x:a} -> {xs:List a} -> IsSorted (x::xs) -> IsSorted xs
+isSortedAscTail (IsSortedSingleton x) = IsSortedEmpty
+isSortedAscTail (IsSortedMany x1 x2 xs x1_leq_x2 x2_xs_sorted) = x2_xs_sorted
+
+total
+isSortedAscHead :
+  Ord a => {x1,x2:a} -> {xs:List a} -> IsSorted (x1::x2::xs) -> So (x1 <= x2)
+isSortedAscHead (IsSortedMany x1 x2 xs x1_leq_x2 x2_xs_sorted) = believe_me ()
+
 -- the basic version of the insert operation without proof terms. not actually
 -- used anywhere, only for reference when writing the proof-carrying version
 total
@@ -145,10 +156,11 @@ Having received this as hypothesis, an induction step will return:
 -}
 total
 inssortInsertProofMotive : (a: Type) -> (x: a) -> (l: List a) -> Type
-inssortInsertProofMotive a x [] = Ord a => (l: List a ** (So (isSortedAsc l), Permuts [x] l))
+inssortInsertProofMotive a x [] = Ord a => (l: List a ** (IsSorted l, Permuts [x] l))
 inssortInsertProofMotive a x (s::ss) = Ord a => 
-  So (isSortedAsc (s::ss)) ->   -- to request the inductive hyp
-    (l: List a ** (So (isSortedAsc l), Permuts (x::s::ss) l,
+  IsSorted (s::ss) ->
+  -- So (isSortedAsc (s::ss)) ->   -- to request the inductive hyp
+    (l: List a ** (IsSorted l, Permuts (x::s::ss) l,
       mapHeadMotive l (\newhead => Either (newhead = s) (newhead = x))))
 
 
@@ -178,15 +190,15 @@ eitherEqsElim mot mx my (Right u_eq_y) = replace {p=mot} (sym u_eq_y) my
 -- pattern matching on LEQs here.)
 total
 inssortInsertWithProofs : (x: a) -> (l: List a) -> inssortInsertProofMotive a x l
-inssortInsertWithProofs x [] = ([x] ** (Oh, permutsRefl [x]))
+inssortInsertWithProofs x [] = ([x] ** (IsSortedSingleton x, permutsRefl [x]))
 inssortInsertWithProofs x [s] = \slist_sorted => case chooseLEQ x s of
   Left x_leq_s => ((x :: [s]) ** 
-    (andSo (x_leq_s, slist_sorted), permutsRefl [x, s], Right Refl))
+    (IsSortedMany x s [] x_leq_s (IsSortedSingleton s), permutsRefl [x, s], Right Refl))
   Right s_leq_x => ((s :: [x]) ** 
-    (andSo (s_leq_x, slist_sorted), PermutsFlipCons x s PermutsNils, Left Refl))
+    (IsSortedMany s x [] s_leq_x (IsSortedSingleton x), PermutsFlipCons x s PermutsNils, Left Refl))
 inssortInsertWithProofs x (s :: (s2 :: ss)) = \slist_sorted => case chooseLEQ x s of
-  Left x_leq_s => ((x :: s :: (s2 :: ss)) ** 
-    (andSo (x_leq_s, slist_sorted), permutsRefl (x::s::s2::ss), Right Refl))
+  Left x_leq_s => ((x :: (s :: (s2 :: ss))) ** 
+    (IsSortedMany x s (s2::ss) x_leq_s slist_sorted, permutsRefl (x::s::s2::ss), Right Refl))
   Right s_leq_x => let
     -- ideally we would have a (s_leq_s2, s2_ss_is_sorted) = soAnd slist_sorted
     -- line up here, so that we can just grab the (snd $ soAnd slist_sorted)
@@ -201,13 +213,11 @@ inssortInsertWithProofs x (s :: (s2 :: ss)) = \slist_sorted => case chooseLEQ x 
     -- (s <= s2) && isSortedAsc (s2 :: ss2), and "soAnd" can yield each side of
     -- that &&.
     (rec_out ** (rec_sorted_proof, rec_permuts_proof, rec_head_proof)) = 
-      (inssortInsertWithProofs x $ assert_smaller (s :: (s2 :: ss)) (s2 :: ss)) 
-      $ (snd $ soAnd slist_sorted)  
-    
-    s_leq_s2 = fst $ soAnd slist_sorted
+      (inssortInsertWithProofs x $ assert_smaller (s :: (s2 :: ss)) (s2::ss)) 
+      $ isSortedAscTail slist_sorted
     
     proof_terms = case rec_out of
-        [] => (Oh, permutsInsert rec_permuts_proof, Left Refl)
+        [] => (IsSortedSingleton s, permutsInsert rec_permuts_proof, Left Refl)
         (r_x :: r_xs) => let
             -- here, we prove that s <= r_x. This follows from the fact that we
             -- have s <= x (from the LEQs case analysis) and s <= s2 (from the
@@ -221,16 +231,16 @@ inssortInsertWithProofs x (s :: (s2 :: ss)) = \slist_sorted => case chooseLEQ x 
             -- otherwise idris can't figure out that this motive lambda expr
             -- applied to x or s2 is supposed to mean the same thing as 
             -- applying that name to x or s2, which is pretty sad)
-            s_leq_r_x = eitherEqsElim (\rhs => So (s <= rhs)) s_leq_s2 s_leq_x rec_head_proof
-          in (andSo (s_leq_r_x, rec_sorted_proof), permutsInsert rec_permuts_proof, Left Refl)
+            s_leq_r_x = eitherEqsElim (\rhs => So (s <= rhs)) (isSortedAscHead slist_sorted) s_leq_x rec_head_proof
+          in (IsSortedMany s r_x r_xs s_leq_r_x rec_sorted_proof, permutsInsert rec_permuts_proof, Left Refl)
     in ((s :: rec_out) ** proof_terms)
 
 
 -- run insertion sort, carrying proofs
 total
-inssortWithProofs : Ord a => (o: List a) -> (l: List a ** (So (isSortedAsc l), Permuts o l))
-inssortWithProofs [] = ([] ** (Oh, PermutsNils))
-inssortWithProofs [x] = ([x] ** (Oh, permutsRefl [x]))
+inssortWithProofs : Ord a => (o: List a) -> (l: List a ** (IsSorted l, Permuts o l))
+inssortWithProofs [] = ([] ** (IsSortedEmpty, PermutsNils))
+inssortWithProofs [x] = ([x] ** (IsSortedSingleton x, permutsRefl [x]))
 inssortWithProofs (x::s::ss) =
 
   -- recursively sort (s :: ss); the resulting output and proof terms are our
@@ -244,7 +254,7 @@ inssortWithProofs (x::s::ss) =
     -- this case is actually unreachable, since the inductive sort on (s::ss)
     -- would never actually return [], but we can pretend that it can happen
     -- and give it a proof using our inductive hypothesis anyway!
-    [] => ([x] ** (Oh, PermutsCons x inductive_permuts_proof))
+    [] => ([x] ** (IsSortedSingleton x, PermutsCons x inductive_permuts_proof))
     
     -- in this case, (r_x::r_xs) is the result of the recursive sort on (s::ss).
     (r_x :: r_xs) => let    
