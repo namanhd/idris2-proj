@@ -4,6 +4,12 @@ module InsSort
 
 import Data.So    -- So, Oh, choose, andSo, soAnd
 
+data IsSorted : List a -> Type where
+  IsSortedEmpty : IsSorted []
+  IsSortedSingleton : Ord a => (x:a) -> IsSorted [x]
+  IsSortedMany : 
+    Ord a => (x1:a) -> (x2:a) -> (xs:List a) -> (So (x1 <= x2)) -> IsSorted (x2::xs) -> IsSorted (x1::(x2::xs))
+
 -- the basic version of the insert operation without proof terms. not actually
 -- used anywhere, only for reference when writing the proof-carrying version
 total
