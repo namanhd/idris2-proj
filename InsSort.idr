@@ -4,22 +4,20 @@ module InsSort
 
 import Data.So    -- So, Oh, choose, andSo, soAnd
 
-data IsSorted : List a -> Type where
-  IsSortedEmpty : IsSorted []
+data IsSorted : Ord a => List a -> Type where
+  IsSortedEmpty : Ord a => IsSorted (the (List a) [])
   IsSortedSingleton : Ord a => (x:a) -> IsSorted [x]
   IsSortedMany : 
     Ord a => (x1:a) -> (x2:a) -> (xs:List a) -> (So (x1 <= x2)) -> IsSorted (x2::xs) -> IsSorted (x1::(x2::xs))
 
 total
-isSortedAscTail :
-  Ord a => {x:a} -> {xs:List a} -> IsSorted (x::xs) -> IsSorted xs
-isSortedAscTail (IsSortedSingleton x) = IsSortedEmpty
-isSortedAscTail (IsSortedMany x1 x2 xs x1_leq_x2 x2_xs_sorted) = x2_xs_sorted
+isSortedTail : Ord a => {x:a} -> {xs:List a} -> IsSorted (x::xs) -> IsSorted xs
+isSortedTail (IsSortedSingleton x) = IsSortedEmpty
+isSortedTail (IsSortedMany x1 x2 xs x1_leq_x2 x2_xs_sorted) = x2_xs_sorted
 
 total
-isSortedAscHead :
-  Ord a => {x1,x2:a} -> {xs:List a} -> IsSorted (x1::x2::xs) -> So (x1 <= x2)
-isSortedAscHead (IsSortedMany x1 x2 xs x1_leq_x2 x2_xs_sorted) = believe_me ()
+isSortedHeadLeq: Ord a => {x1,x2:a} -> {xs:List a} -> IsSorted (x1::x2::xs) -> So (x1 <= x2)
+isSortedHeadLeq (IsSortedMany x1 x2 xs x1_leq_x2 x2_xs_sorted) = x1_leq_x2
 
 -- the basic version of the insert operation without proof terms. not actually
 -- used anywhere, only for reference when writing the proof-carrying version
@@ -214,7 +212,7 @@ inssortInsertWithProofs x (s :: (s2 :: ss)) = \slist_sorted => case chooseLEQ x 
     -- that &&.
     (rec_out ** (rec_sorted_proof, rec_permuts_proof, rec_head_proof)) = 
       (inssortInsertWithProofs x $ assert_smaller (s :: (s2 :: ss)) (s2::ss)) 
-      $ isSortedAscTail slist_sorted
+      $ isSortedTail slist_sorted
     
     proof_terms = case rec_out of
         [] => (IsSortedSingleton s, permutsInsert rec_permuts_proof, Left Refl)
@@ -231,7 +229,7 @@ inssortInsertWithProofs x (s :: (s2 :: ss)) = \slist_sorted => case chooseLEQ x 
             -- otherwise idris can't figure out that this motive lambda expr
             -- applied to x or s2 is supposed to mean the same thing as 
             -- applying that name to x or s2, which is pretty sad)
-            s_leq_r_x = eitherEqsElim (\rhs => So (s <= rhs)) (isSortedAscHead slist_sorted) s_leq_x rec_head_proof
+            s_leq_r_x = eitherEqsElim (\rhs => So (s <= rhs)) (isSortedHeadLeq slist_sorted) s_leq_x rec_head_proof
           in (IsSortedMany s r_x r_xs s_leq_r_x rec_sorted_proof, permutsInsert rec_permuts_proof, Left Refl)
     in ((s :: rec_out) ** proof_terms)
 
