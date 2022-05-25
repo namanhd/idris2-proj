@@ -8,16 +8,16 @@ data IsSorted : Ord a => List a -> Type where
   IsSortedEmpty : Ord a => IsSorted (the (List a) [])
   IsSortedSingleton : Ord a => (x:a) -> IsSorted [x]
   IsSortedMany : 
-    Ord a => (x1:a) -> (x2:a) -> (xs:List a) -> (So (x1 <= x2)) -> IsSorted (x2::xs) -> IsSorted (x1::(x2::xs))
+    Ord a => {x1, x2: a} -> {xs: List a} -> (So (x1 <= x2)) -> IsSorted (x2::xs) -> IsSorted (x1::(x2::xs))
 
 total
 isSortedTail : Ord a => {x:a} -> {xs:List a} -> IsSorted (x::xs) -> IsSorted xs
 isSortedTail (IsSortedSingleton x) = IsSortedEmpty
-isSortedTail (IsSortedMany x1 x2 xs x1_leq_x2 x2_xs_sorted) = x2_xs_sorted
+isSortedTail (IsSortedMany x1_leq_x2 x2_xs_sorted) = x2_xs_sorted
 
 total
 isSortedHeadLeq: Ord a => {x1,x2:a} -> {xs:List a} -> IsSorted (x1::x2::xs) -> So (x1 <= x2)
-isSortedHeadLeq (IsSortedMany x1 x2 xs x1_leq_x2 x2_xs_sorted) = x1_leq_x2
+isSortedHeadLeq (IsSortedMany x1_leq_x2 x2_xs_sorted) = x1_leq_x2
 
 -- the basic version of the insert operation without proof terms. not actually
 -- used anywhere, only for reference when writing the proof-carrying version
@@ -27,6 +27,7 @@ inssortInsert x [] = [x]
 inssortInsert x (s::ss) = if x <= s then (x::s::ss) else s :: inssortInsert x ss
 
 -- predicate to determine whether a list is sorted
+-- (not used)
 total
 isSortedAsc : (Ord a) => List a -> Bool 
 isSortedAsc [] = True
@@ -191,12 +192,12 @@ inssortInsertWithProofs : (x: a) -> (l: List a) -> inssortInsertProofMotive a x 
 inssortInsertWithProofs x [] = ([x] ** (IsSortedSingleton x, permutsRefl [x]))
 inssortInsertWithProofs x [s] = \slist_sorted => case chooseLEQ x s of
   Left x_leq_s => ((x :: [s]) ** 
-    (IsSortedMany x s [] x_leq_s (IsSortedSingleton s), permutsRefl [x, s], Right Refl))
+    (IsSortedMany x_leq_s (IsSortedSingleton s), permutsRefl [x, s], Right Refl))
   Right s_leq_x => ((s :: [x]) ** 
-    (IsSortedMany s x [] s_leq_x (IsSortedSingleton x), PermutsFlipCons x s PermutsNils, Left Refl))
+    (IsSortedMany s_leq_x (IsSortedSingleton x), PermutsFlipCons x s PermutsNils, Left Refl))
 inssortInsertWithProofs x (s :: (s2 :: ss)) = \slist_sorted => case chooseLEQ x s of
   Left x_leq_s => ((x :: (s :: (s2 :: ss))) ** 
-    (IsSortedMany x s (s2::ss) x_leq_s slist_sorted, permutsRefl (x::s::s2::ss), Right Refl))
+    (IsSortedMany x_leq_s slist_sorted, permutsRefl (x::s::s2::ss), Right Refl))
   Right s_leq_x => let
     -- ideally we would have a (s_leq_s2, s2_ss_is_sorted) = soAnd slist_sorted
     -- line up here, so that we can just grab the (snd $ soAnd slist_sorted)
@@ -230,7 +231,7 @@ inssortInsertWithProofs x (s :: (s2 :: ss)) = \slist_sorted => case chooseLEQ x 
             -- applied to x or s2 is supposed to mean the same thing as 
             -- applying that name to x or s2, which is pretty sad)
             s_leq_r_x = eitherEqsElim (\rhs => So (s <= rhs)) (isSortedHeadLeq slist_sorted) s_leq_x rec_head_proof
-          in (IsSortedMany s r_x r_xs s_leq_r_x rec_sorted_proof, permutsInsert rec_permuts_proof, Left Refl)
+          in (IsSortedMany s_leq_r_x rec_sorted_proof, permutsInsert rec_permuts_proof, Left Refl)
     in ((s :: rec_out) ** proof_terms)
 
 
